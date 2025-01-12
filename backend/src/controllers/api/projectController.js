@@ -1,6 +1,7 @@
 const Project = require('../../models/Project');
 const User = require('../../models/User');
 const BaseController = require('../../controllers/api/apiBaseController');
+const { projectValidation } = require('../../validations/api/projectValidation');
 
 class ProjectController extends BaseController {
 
@@ -30,6 +31,11 @@ class ProjectController extends BaseController {
      */
     store = async (req, res) => {
         try {
+            const validationErrors = await taskValidation(req);
+            if (validationErrors) {
+                return this.sendError(res, 'Validation failed', 400, validationErrors);
+            }
+            
             const { name, description, createdBy } = req.body;
 
             const user = await User.findById(createdBy);
@@ -89,6 +95,12 @@ class ProjectController extends BaseController {
     update = async (req, res) => {
         try {
             const { id } = req.params;
+            
+            const validationErrors = await taskValidation(req);
+            if (validationErrors) {
+                return this.sendError(res, 'Validation failed', 400, validationErrors);
+            }
+
             const { name, description, status } = req.body;
 
             const project = await Project.findById(id);
