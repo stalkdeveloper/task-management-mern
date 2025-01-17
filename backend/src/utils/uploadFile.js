@@ -1,5 +1,13 @@
+const fs = require('fs');
 const multer = require('multer');
 const path = require('path');
+
+// Function to create the folder if it doesn't exist
+const ensureDirectoryExistence = (dirPath) => {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+};
 
 const uploadFile = (fileFieldName, fileType = 'image', folder = 'uploads', sizeMB = 5) => {
     let allowedTypes;
@@ -23,7 +31,9 @@ const uploadFile = (fileFieldName, fileType = 'image', folder = 'uploads', sizeM
 
     const storage = multer.diskStorage({
         destination: (req, file, cb) => {
-            const uploadPath = path.join(__dirname, folder);
+            const uploadPath = path.join(__dirname, '../uploads');
+            ensureDirectoryExistence(uploadPath);
+
             cb(null, uploadPath);
         },
         filename: (req, file, cb) => {

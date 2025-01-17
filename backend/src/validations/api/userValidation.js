@@ -9,6 +9,11 @@ const storeValidation = async (req) => {
         username: Joi.string().required().messages({
             'string.empty': 'Username is required',
         }),
+        dateofbirth: Joi.date().less('now').required().messages({
+            'date.base': 'Please enter a valid date',
+            'date.less': 'Date of birth must be a date in the past',
+            'any.required': 'Date of birth is required',
+        }),
         email: Joi.string().email().required().messages({
             'string.email': 'Please enter a valid email',
         }),

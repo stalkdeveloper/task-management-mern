@@ -13,6 +13,7 @@ class AuthController extends BaseController {
      */
     register = async (req, res) => {
         try {
+            let newUser = null;
             const validationErrors = await registerValidation(req);
             if (validationErrors) {
                 return this.sendError(res, 'Validation failed', 400, validationErrors);
@@ -20,12 +21,16 @@ class AuthController extends BaseController {
     
             const { name, username, email, password } = req.body;
     
-            const existingUser = await User.findOne({ email });
-            if (existingUser && !existingUser.isDeleted) {
-                return this.sendError(res, 'User already exists', 400);
+            const existingUserByUsername = await User.findOne({ username, isDeleted: false });
+            if (existingUserByUsername) {
+                return this.sendError(res, 'Username is already taken', 400);
             }
-
-            const newUser = new User({
+            const existingUserByEmail = await User.findOne({ email, isDeleted: false });
+            if (existingUserByEmail) {
+                return this.sendError(res, 'User with this email already exists', 400);
+            }
+    
+            newUser = new User({
                 name,
                 username,
                 email,
@@ -33,7 +38,7 @@ class AuthController extends BaseController {
             });
     
             await newUser.save();
-            const jwtSecret = JWT_SECRET || 'your_default_jwt_secret';
+            const jwtSecret = JWT_SECRET || 'iamresgiter';
             const token = jwt.sign({ userId: newUser._id }, jwtSecret, { expiresIn: '1h' });
             const refreshToken = jwt.sign({ userId: newUser._id }, JWT_REFRESH_SECRET, { expiresIn: '7d' });
     
@@ -48,6 +53,8 @@ class AuthController extends BaseController {
         }
     };
     
+        
+    
     
 
     /**
@@ -61,14 +68,13 @@ class AuthController extends BaseController {
             }
    
             const { email, password } = req.body;
-            const user = await User.findOne({ email });
+            const user = await User.findOne({ email: email, status: 1 }).sort({ createdAt: -1 });
             if (!user || user.isDeleted) {
                 return this.sendError(res, 'Invalid credentials', 401);
             }
 
             const isPasswordValid = await bcrypt.compare(password, user.password);
             if (!isPasswordValid) {
-                logInfo('Password mismatch for user:', email);
                 return this.sendError(res, 'Invalid email or password', 401);
             }
    
@@ -178,14 +184,15 @@ class AuthController extends BaseController {
      */
     softDeleteUser = async (req, res) => {
         try {
-           const { userId } = req.params;
-           const user = await User.findById(userId);
-           if (!user) {
-               return this.sendError(res, 'User not found', 404);
-           }
+            const { userEmailOrId } = req.params;
 
-           await user.softDelete();
-           return this.sendResponse(res, null, 'User soft-deleted successfully');
+            const user = await User.findByEmailOrId(userEmailOrId);
+            if (!user) {
+                return this.sendError(res, 'User not found', 404);
+            }
+
+            await user.softDelete();
+            return this.sendResponse(res, null, 'User soft-deleted successfully');
        } catch (error) {
            return this.sendError(res, 'Error during soft delete', 500, error.message);
        }

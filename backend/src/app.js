@@ -5,8 +5,14 @@ const path = require('path');
 const app = express();
 require('dotenv').config();
 
+/* gloabl config */
+require('./config/constant');
+
+const bodyParser = require('body-parser');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const routes = require('./routes/route');
 app.use('/', routes);

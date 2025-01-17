@@ -10,6 +10,6 @@ router.post('/logout', authController.logout);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 
-router.delete('/soft-delete/:userId', authenticate, authController.softDeleteUser);
+router.delete('/soft-delete/:userEmailOrId', authenticate, authController.softDeleteUser);
 
 module.exports = router;

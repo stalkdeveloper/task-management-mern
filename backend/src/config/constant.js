@@ -1,4 +1,4 @@
-module.exports = {
+global.constants = {
     USER_STATUS: [
         'active',
         'inactive',
@@ -67,6 +67,10 @@ module.exports = {
         TRUE: true,
         FALSE: false
     },
+
+    URL: {
+        baseUrl: `http://localhost:3000/`
+    }
 };
   
   

@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema({
   username: {
     type: String,
     required: true,
-    unique: false,
     trim: true,
   },
   email: {
@@ -19,9 +18,26 @@ const userSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
   },
+  dateofbirth: {
+    type: Date,
+    required: false,
+  },
   password: {
     type: String,
     required: true,
+  },
+  country_code: {
+    type: String,
+    required: false
+  },
+  mobile_number: {
+    type: String,
+    required: false
+  },
+  status: {
+    type: Number,
+    enum: [0, 1],
+    default: 1
   },
   isDeleted: {
     type: Boolean,
@@ -50,6 +66,14 @@ userSchema.methods.softDelete = async function () {
 
 userSchema.statics.findNonDeleted = function() {
   return this.find({ isDeleted: false });
+};
+
+userSchema.statics.findByEmailOrId = async function(userEmailOrId) {
+  if (mongoose.Types.ObjectId.isValid(userEmailOrId)) {
+    return this.findOne({ _id: userEmailOrId, isDeleted: false }).sort({ createdAt: -1 });
+  } else {
+    return this.findOne({ email: userEmailOrId, isDeleted: false }).sort({ createdAt: -1 });
+  }
 };
 
 module.exports = mongoose.model('User', userSchema);
