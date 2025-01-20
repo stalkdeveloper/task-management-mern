@@ -1,9 +1,10 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
+const FileMetaData = require('../../models/FileMetaData');
 const BaseController = require('../../controllers/api/apiBaseController');
 const { storeValidation, editValidation } = require('../../validations/api/userValidation');
-const FileMetaData = require('../../models/FileMetaData');
+const { generateFileMetadata } = require('../../utils/fileMetadataHelper');
+const { extractFileMetadata, formatDateOfBirth, deleteFileIfExists } = require('../../utils/helpers');
 
 class UserController extends BaseController {
     /**
@@ -14,6 +15,7 @@ class UserController extends BaseController {
             const users = await User.find({ isDeleted: false });
             return this.sendResponse(res, { users }, 'Users fetched successfully');
         } catch (error) {
+            logError('Error in userController index function:', error);
             return this.sendError(res, 'Error fetching users', 500, error.message);
         }
     };
@@ -32,62 +34,43 @@ class UserController extends BaseController {
     store = async (req, res) => {
         try {
             const validationErrors = await storeValidation(req);
-            logError('Validation', validationErrors);
             if (validationErrors) {
                 return this.sendError(res, 'Validation failed', 400, validationErrors);
             }
-            const { name, username, email, country_code, mobile_number, password, dateofbirth } = req.body;
-            
-            const formattedDateOfBirth = new Date(dateofbirth);
-            const onlyDate = new Date(formattedDateOfBirth.setHours(0, 0, 0, 0));
 
+            const { name, username, email, country_code, mobile_number, password, dateofbirth } = req.body;
+
+            const formattedDateOfBirth = formatDateOfBirth(dateofbirth);
             const existingUser = await User.findOne({ email }).sort({ createdAt: -1 });
             if (existingUser && !existingUser.isDeleted) {
                 return this.sendError(res, 'User already exists', 400);
             }
-            
             const hashedPassword = await bcrypt.hash(password, 10);
+
             const newUser = new User({
-                name,
-                username,
-                email,
-                country_code,
-                mobile_number,
-                dateofbirth: onlyDate,
-                password: hashedPassword,
+                name, username, email, country_code, mobile_number, dateofbirth: formattedDateOfBirth, password: hashedPassword,
             });
             await newUser.save();
-            if (req.file) {
-                /* const uploadData = uploadFile(req, 'image', 'uploads/images', 5);
-                await new Promise((resolve, reject) => {
-                    uploadData(req, res, (err) => {
-                        if (err) {
-                            return reject(new Error('File upload failed: ' + err.message));
-                        }
-                        newUser.profileImage = req.file.path;
-                        // newUser.save();
-                        resolve();
-                    });
-                }); */
 
-                const fileMetadata = {
-                    filename: req.file.filename,
-                    size: req.file.size,
-                    mimetype: req.file.mimetype,
-                    path: `uploads/images/${req.file.filename}`,
-                    url: `${constants.URL.baseUrl}uploads/images/${req.file.filename}`,
-                    type: 'image',
-                    model: 'User',
-                    modelId: newUser._id,
-                    createdBy: req.user.userId,
-                };
-                
-                const newFileMetaData = new FileMetaData(fileMetadata);
-                await newFileMetaData.save();
+            let fileMetadata = null;
+            if (req.file) {
+                const result = await generateFileMetadata(
+                    req.file, 'User', newUser._id, 'uploads/images/', req.user.userId
+                );
+
+                if (!result.success) {
+                    return this.sendError(res, 'Error saving file metadata', 500, result.message);
+                }
+
+                fileMetadata = extractFileMetadata(result.data);
             }
             const { password: _, ...userWithoutPassword } = newUser.toObject();
-            return this.sendResponse(res, { user: userWithoutPassword }, 'User created successfully', 201);
+            return this.sendResponse(res, {
+                user: userWithoutPassword,
+                file: fileMetadata,
+            }, 'User created successfully', 201);
         } catch (error) {
+            logError('Error in userController store function:', error);
             return this.sendError(res, 'Error during user store', 500, error.message);
         }
     };
@@ -97,20 +80,30 @@ class UserController extends BaseController {
      */
     show = async (req, res) => {
         try {
-            const { userEmailOrId } = req.user._id;
-            
-            const user = await User.findByEmailOrId(userEmailOrId);
+            const { userEmailOrId } = req.params;
+    
+            if (!userEmailOrId) {
+                return this.sendError(res, 'User email or ID is required', 400);
+            }
+    
+            const user = await User.findByEmailOrId(userEmailOrId).select('-password');
             if (!user) {
                 return this.sendError(res, 'User not found', 404);
             }
-
-            if (!user || user.isDeleted) {
-                return this.sendError(res, 'User not found', 404);
-            }
-
-            const { password, ...userWithoutPassword } = user.toObject();
-            return this.sendResponse(res, { user: userWithoutPassword }, 'User profile fetched successfully');
+            const files = await user.getFiles();
+            const organizedFiles = files.reduce((acc, file) => {
+                acc[file.type] = acc[file.type] || [];
+                // acc[file.type].push(file);
+                acc[file.type].push(extractFileMetadata(file));
+                return acc;
+            }, {});
+            const { password, isDeleted, ...userWithoutSensitiveData } = user.toObject();
+            userWithoutSensitiveData.files = organizedFiles;
+            return this.sendResponse(res, {
+                user: userWithoutSensitiveData,
+            }, 'User profile fetched successfully');
         } catch (error) {
+            logError('Error in user controller show function:', error);
             return this.sendError(res, 'Error fetching user profile', 500, error.message);
         }
     };
@@ -120,16 +113,29 @@ class UserController extends BaseController {
      */
     edit = async (req, res) => {
         try {
-            const { userEmailOrId } = req.user._id;
-            
-            const user = await User.findByEmailOrId(userEmailOrId);
+            const { userEmailOrId } = req.params;
+    
+            if (!userEmailOrId) {
+                return this.sendError(res, 'User email or ID is required', 400);
+            }
+    
+            const user = await User.findByEmailOrId(userEmailOrId).select('-password');
             if (!user) {
                 return this.sendError(res, 'User not found', 404);
             }
-
-            const { password, ...userWithoutPassword } = user.toObject();
-            return this.sendResponse(res, { user: userWithoutPassword }, 'User profile fetched for editing');
+            const files = await user.getFiles();
+            const organizedFiles = files.reduce((acc, file) => {
+                acc[file.type] = acc[file.type] || [];
+                acc[file.type].push(extractFileMetadata(file));
+                return acc;
+            }, {});
+            const { password, isDeleted, ...userWithoutSensitiveData } = user.toObject();
+            userWithoutSensitiveData.files = organizedFiles;
+            return this.sendResponse(res, {
+                user: userWithoutSensitiveData,
+            }, 'Successfully fetched User Data');
         } catch (error) {
+            logError('Error in userController edit function:', error);
             return this.sendError(res, 'Error fetching user for editing', 500, error.message);
         }
     };
@@ -139,50 +145,62 @@ class UserController extends BaseController {
      */
     update = async (req, res) => {
         try {
-            const { name, username, email } = req.body;
-            const userId = req.user._id;
-            const user = await User.findById(userId);
+            const validationErrors = await editValidation(req);
+            if (validationErrors) {
+                return this.sendError(res, 'Validation failed', 400, validationErrors);
+            }
     
+            const { userId } = req.params;
+            if (!userId) {
+                return this.sendError(res, 'User ID is required', 400);
+            }
+    
+            const { name, username, email, country_code, mobile_number, dateofbirth } = req.body;
+    
+            const user = await User.findById(userId);
             if (!user || user.isDeleted) {
                 return this.sendError(res, 'User not found', 404);
             }
-    
-            const existingUser = await User.findOne({ $or: [{ email }, { username }] });
-            if (existingUser && existingUser._id.toString() !== userId.toString()) {
-                return this.sendError(res, 'Email or username already in use', 400);
-            }
-    
-            if (req.file && user.profileImage) {
-                const oldImagePath = path.join(__dirname, user.profileImage);
-                if (fs.existsSync(oldImagePath)) {
-                    fs.unlinkSync(oldImagePath);
+            const formattedDateOfBirth = dateofbirth ? formatDateOfBirth(dateofbirth) : user.dateofbirth;
+            const existingImage = await user.getFiles(req.file.fieldname, true);
+            if (req.file && existingImage) {
+                const fileDelete = deleteFileIfExists(existingImage.path, existingImage.filename);
+                if (fileDelete) {
+                    await FileMetaData.deleteOne({ _id: existingImage._id });
                 }
             }
     
             user.name = name;
             user.username = username;
             user.email = email;
+            user.country_code = country_code;
+            user.mobile_number = mobile_number;
+            user.dateofbirth = formattedDateOfBirth;
+            let fileMetadata = null;
             if (req.file) {
-                const fileMetadata = {
-                    filename: req.file.filename,
-                    size: req.file.size,
-                    mimetype: req.file.mimetype,
-                    path: `uploads/images/${req.file.filename}`,
-                    url: `${constants.URL.baseUrl}uploads/images/${req.file.filename}`,
-                    type: 'image',
-                    model: 'User',
-                    modelId: userId,
-                    createdBy: req.user.userId,
-                };
-                const newFileMetaData = new FileMetaData(fileMetadata);
-                await newFileMetaData.save();
-                user.profileImage = fileMetadata.path;
-            }
+                const result = await generateFileMetadata(
+                    req.file, 'User', user._id, 'uploads/images/', req.user.userId
+                );
     
+                if (!result.success) {
+                    return this.sendError(res, 'Error saving file metadata', 500, result.message);
+                }
+    
+                fileMetadata = extractFileMetadata(result.data);
+                user.profileImage = result.data.path;
+            } else {
+                const file = await user.getFiles('profileImage', true);
+                fileMetadata = extractFileMetadata(file)
+            }
+
             await user.save();
             const { password, ...updatedUser } = user.toObject();
-            return this.sendResponse(res, { user: updatedUser }, 'User profile updated successfully');
+            return this.sendResponse(res, {
+                user: updatedUser,
+                file: fileMetadata,
+            }, 'User profile updated successfully');
         } catch (error) {
+            logError('Error in userController update function:', error);
             return this.sendError(res, 'Error updating user profile', 500, error.message);
         }
     };
@@ -192,7 +210,7 @@ class UserController extends BaseController {
      */
     destroy = async (req, res) => {
         try {
-            const { userEmailOrId } = req.user._id;
+            const { userEmailOrId } = req.params;
             
             const user = await User.findByEmailOrId(userEmailOrId);
             if (!user) {

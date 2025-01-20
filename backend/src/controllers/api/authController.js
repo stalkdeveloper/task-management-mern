@@ -107,7 +107,7 @@ class AuthController extends BaseController {
             const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
             const user = await User.findById(decoded.userId);
     
-            if (!user) {
+            if (!user || user.isDeleted) {
                 return this.sendError(res, 'User not found', 404);
             }
             const newAccessToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });

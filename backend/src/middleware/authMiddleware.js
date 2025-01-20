@@ -17,6 +17,10 @@ const authenticate = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
+
+    const newToken = jwt.sign({ userId: decoded.userId }, JWT_SECRET, { expiresIn: '1h' });
+    res.setHeader('Authorization', `Bearer ${newToken}`);
+
     next();
   } catch (error) {
     return res.status(401).json({

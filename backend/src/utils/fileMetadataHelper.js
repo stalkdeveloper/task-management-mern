@@ -7,10 +7,10 @@ module.exports.generateFileMetadata = async (file, model, modelId, midUrlPart, c
         mimetype: file.mimetype,
         path: `uploads/images/${file.filename}`,
         url: `${constants.URL.baseUrl}${midUrlPart}${file.filename}`,
-        type: 'image',
+        type: file.fieldname,
         model: model,
         modelId: modelId,
-        createdBy: createdBy,
+        createdBy: createdBy
     };
 
     try {
@@ -22,7 +22,7 @@ module.exports.generateFileMetadata = async (file, model, modelId, midUrlPart, c
             data: savedFileMetaData,
         };
     } catch (error) {
-        console.error('Error saving file metadata:', error);
+        logError('Error saving file metadata:', error);
 
         return {
             success: false,

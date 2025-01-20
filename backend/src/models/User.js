@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const FileMetaData = require('./FileMetaData');
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -68,12 +69,24 @@ userSchema.statics.findNonDeleted = function() {
   return this.find({ isDeleted: false });
 };
 
-userSchema.statics.findByEmailOrId = async function(userEmailOrId) {
-  if (mongoose.Types.ObjectId.isValid(userEmailOrId)) {
-    return this.findOne({ _id: userEmailOrId, isDeleted: false }).sort({ createdAt: -1 });
+userSchema.statics.findByEmailOrId = function (userEmailOrId) {
+  const query = mongoose.Types.ObjectId.isValid(userEmailOrId)
+      ? { _id: userEmailOrId, isDeleted: false }
+      : { email: userEmailOrId, isDeleted: false };
+  return this.findOne(query).sort({ createdAt: -1 });
+};
+
+userSchema.methods.getFiles = async function (type = null, single = false) {
+  const query = { model: 'User', modelId: this._id };
+  if (type) {
+      query.type = type;
+  }
+  if (single) {
+    return await FileMetaData.findOne(query);
   } else {
-    return this.findOne({ email: userEmailOrId, isDeleted: false }).sort({ createdAt: -1 });
+    return await FileMetaData.find(query);
   }
 };
+
 
 module.exports = mongoose.model('User', userSchema);
